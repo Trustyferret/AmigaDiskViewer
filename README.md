@@ -2,9 +2,9 @@
 
 **See inside Amiga floppy disk images (ADF/ADZ) in your browser:** a block-by-block disk map, a boot-block decoder with a 68000 disassembler, a labelled hex view, the file tree, and previews of the pictures, icons, sounds, music and AmigaGuide documents on the disk.
 
-### [▶ Try it now](https://trustyferret.github.io/AmigaDiskViewer/?sample)
+### [▶ Open the viewer](https://trustyferret.github.io/AmigaDiskViewer/?sample)
 
-It opens with a built-in sample disk. Drop your own `.adf` or `.adz` on it to look at that instead. It all runs inside your browser: nothing is uploaded, nothing is installed, and your disk images are never changed.
+It's the complete viewer, ready to use on the web. It opens with a built-in sample disk; drop your own `.adf` or `.adz` on it to look at that instead. It all runs inside your browser: nothing is uploaded, nothing is installed, and your disk images are never changed.
 
 ![The viewer showing the sample disk: file tree, disk map, and an IFF picture previewed on the right](docs/screenshots/overview.png)
 
@@ -21,15 +21,15 @@ It opens with a built-in sample disk. Drop your own `.adf` or `.adz` on it to lo
 
 Tested against about 2,190 real disk images without a crash.
 
-## Running it yourself
+## Running your own copy
 
-No install and no build. Download the repository (green **Code** button → **Download ZIP**), unzip it, and double-click `index.html`. It works offline.
+The website is all most people need. If you'd rather have a copy, for offline use or to change the code, download the repository (green **Code** button → **Download ZIP**), unzip it, and double-click `index.html`. There's no install and no build, and it works offline.
 
 ## Opening a disk
 
-1. Open the page (the [live version](https://trustyferret.github.io/AmigaDiskViewer/), or `index.html` from your copy).
+1. Open the page ([the website](https://trustyferret.github.io/AmigaDiskViewer/), or `index.html` from your copy).
 2. Drag an `.adf` or `.adz` file onto the page, or click **Open disk…**.
-   **Load sample disk** builds a small demo disk instead.
+   **Load sample disk** builds a small example disk instead.
 
 ADF is the standard image of an 880 KB DD floppy (HD 1.76 MB images work too, as do images with 81–84 cylinders). ADZ is a gzipped ADF; the page unpacks it itself.
 

@@ -1,6 +1,6 @@
 # Amiga Disk Viewer: project notes
 
-A single-page browser tool for exploring Amiga floppy images (ADF, ADZ): a disk map, a boot block decoder with a 68000 disassembler, a labelled hex view, a file tree with extract, previews of the files on the disk, and small edits saved as a copy. The user guide is `README.md`; keep it in step with the code. It is published as a live demo with GitHub Pages (https://trustyferret.github.io/AmigaDiskViewer/, served straight from `main`; `.nojekyll` turns off Jekyll). README screenshots live in `docs/screenshots/` and must show the sample disk only, never game disks (their art and music belong to others).
+A single-page browser tool for exploring Amiga floppy images (ADF, ADZ): a disk map, a boot block decoder with a 68000 disassembler, a labelled hex view, a file tree with extract, previews of the files on the disk, and small edits saved as a copy. The user guide is `README.md`; keep it in step with the code. The complete viewer is also published as a website with GitHub Pages (https://trustyferret.github.io/AmigaDiskViewer/, served straight from `main`; `.nojekyll` turns off Jekyll). README screenshots live in `docs/screenshots/` and must show the sample disk only, never game disks (their art and music belong to others).
 
 ## Layout
 - `index.html`: layout, all CSS, and the static "How it works" text. Loads the scripts as plain `<script src>` tags, not ES modules, so it works when opened from `file://`.
