@@ -1,0 +1,10 @@
+{
+  "name": "amiga-disk-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A browser page that shows what is on an Amiga floppy disk image (ADF/ADZ).",
+  "scripts": {
+    "test": "node --test tests/",
+    "scan": "node tools/scan.js"
+  }
+}

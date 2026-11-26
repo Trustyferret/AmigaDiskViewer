@@ -1,0 +1,6 @@
+# Disk images are never stored in the repository
+*.adf
+*.ADF
+*.adz
+*.ADZ
+node_modules/
