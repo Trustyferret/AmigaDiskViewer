@@ -11,6 +11,8 @@ const path = require('path');
 const zlib = require('zlib');
 const ADF = require('../src/adf.js');
 const M68K = require('../src/m68k.js');
+const Preview = require('../src/preview.js');
+const ModPlayer = require('../src/modplayer.js');
 
 const dir = process.argv[2];
 if (!dir) { console.error('Usage: node tools/scan.js <folder>'); process.exit(2); }
@@ -26,7 +28,7 @@ function* walk(d) {
 const tally = {};
 const count = (group, key) => { tally[group] = tally[group] || {}; tally[group][key] = (tally[group][key] || 0) + 1; };
 const crashes = [], examples = {};
-const example = (key, file) => { (examples[key] = examples[key] || []).length < 3 && examples[key].push(path.basename(file)); };
+const example = (key, file) => { (examples[key] = examples[key] || []).length < 3 && examples[key].push(path.isAbsolute(file) ? path.basename(file) : file); };
 let total = 0, files = 0, extracted = 0, incomplete = 0;
 const started = Date.now();
 
@@ -52,6 +54,20 @@ for (const file of walk(dir)) {
       files++;
       const r = ADF.readFile(an, bytes, e);
       if (r.complete) extracted++; else incomplete++;
+      // What the Preview tab makes of it. Music is also played for a moment, to exercise the player.
+      const pv = Preview.decode(r.data, e.name);
+      count('Preview: kind', pv.kind + (pv.packed ? ' (PowerPacked)' : ''));
+      count('Preview: label', pv.label);
+      if (pv.packed) {
+        count('PowerPacker', pv.packed.data ? 'unpacked' : 'could not unpack');
+        if (!pv.packed.data) example('pp-fail', path.basename(file) + ' > ' + e.path);
+      }
+      if (pv.notes && pv.notes.length) { count('Preview notes', pv.kind); example('note:' + pv.kind, path.basename(file) + ' > ' + e.path + ': ' + pv.notes[0]); }
+      if (pv.kind === 'music') {
+        const L = new Float32Array(8000), R = new Float32Array(8000);
+        ModPlayer.create(pv, 8000).render(L, R, 8000);
+        ModPlayer.duration(pv);
+      }
     }
   } catch (err) {
     crashes.push(file + ': ' + (err && err.stack || err));

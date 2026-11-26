@@ -4,9 +4,9 @@
  * Browser global: `BuildADF`; Node: `require('./build-adf.js')`.
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./adf.js'));
-  else root.BuildADF = factory(root.ADF);
-})(typeof self !== 'undefined' ? self : this, function (ADF) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./adf.js'), require('./build-files.js'));
+  else root.BuildADF = factory(root.ADF, root.BuildFiles);
+})(typeof self !== 'undefined' ? self : this, function (ADF, BuildFiles) {
   'use strict';
   const B = ADF.BSIZE;
 
@@ -113,10 +113,14 @@
     return bytes;
   }
 
-  /** A small disk laid out a bit like a Workbench disk, used by "Load sample disk". */
+  /**
+   * A small disk laid out a bit like a Workbench disk, used by "Load sample disk".
+   * It holds one of each file type the Preview tab shows.
+   */
   function sampleDisk() {
     let story = '';
     for (let i = 1; story.length < 40000; i++) story += 'Line ' + i + ': the quick brown fox jumps over the lazy dog.\n';
+    const F = BuildFiles;
     return buildDisk({
       name: 'Sample Disk',
       entries: [
@@ -125,11 +129,21 @@
         { path: 'libs', dir: true },
         { path: 'devs', dir: true },
         { path: 'docs', dir: true },
+        { path: 'Pics', dir: true },
+        { path: 'Sounds', dir: true },
+        { path: 'Music', dir: true },
         { path: 's/Startup-Sequence', data: 'echo "Hello from the sample disk"\nLoadWB\nEndCLI >NIL:\n', protect: 0x40 },
-        { path: 'c/Hello', data: 'This is not a real program, just a few bytes standing in for one.\n', comment: 'A pretend command' },
+        { path: 'c/Hello', data: Uint8Array.from([0, 0, 3, 0xF3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 3, 0xE9, 0, 0, 0, 1, 0x4E, 0x75, 0, 0, 0, 0, 3, 0xF2]), comment: 'A pretend command' },
         { path: 'docs/Story.txt', data: story, comment: 'Big enough to need an extension block' },
-        { path: 'docs/ReadMe', data: 'This disk was made by the Amiga Disk Viewer to show how AmigaDOS lays out files.\n' },
-        { path: 'Disk.info', data: new Uint8Array(400).map((_, i) => (i * 37) & 255) },
+        { path: 'docs/ReadMe', data: '\x9B1mThe sample disk\x9B0m\n\nThis disk was made by the Amiga Disk Viewer to show how AmigaDOS lays out files.\nClick the files in Pics, Sounds and Music to preview them.\n' },
+        { path: 'docs/ReadMe.info', data: F.sampleProjectIcon('SYS:Utilities/More', ['FILETYPE=TEXT']) },
+        { path: 'docs/Sample.guide', data: F.SAMPLE_GUIDE },
+        { path: 'docs/Packed.txt', data: F.samplePackedText(), comment: 'Packed with PowerPacker' },
+        { path: 'Pics/Sunset', data: F.samplePicture() },
+        { path: 'Sounds/Zap', data: F.sampleZap() },
+        { path: 'Sounds/Thump', data: F.sampleThump() },
+        { path: 'Music/Sunset.mod', data: F.sampleTune() },
+        { path: 'Disk.info', data: F.sampleDiskIcon() },
       ],
     });
   }

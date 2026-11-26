@@ -18,6 +18,7 @@
   const state = {
     name: '', session: null, an: null, block: 0, entryPath: null, open: new Set(['']),
     tab: 'boot', sel: -1, pending: null, editing: false, changedBlocks: new Set(),
+    kinds: new Map(), previews: new Map(), zoom: 'fit', iconPal: null, guideNode: null,
   };
 
   // ---------- loading ----------
@@ -51,6 +52,7 @@
     state.an = an;
     state.block = an.isDosFs ? an.rootBlock : 0;
     state.entryPath = null; state.open = new Set(['']); state.sel = -1; state.pending = null;
+    scanKinds();
     $('#editMode').disabled = false;
     document.title = name + ' — Amiga Disk Viewer';
     $('#welcome').hidden = true; $('#map').hidden = false;
@@ -62,6 +64,18 @@
     const s = state.session, changed = new Set();
     for (let i = 0; i < s.bytes.length; i++) if (s.bytes[i] !== s.original[i]) changed.add(Math.floor(i / 512));
     state.changedBlocks = changed;
+    scanKinds();
+  }
+
+  /** Recognise every file (for the tags in the tree) and forget earlier previews. */
+  function scanKinds() {
+    state.kinds = new Map(); state.previews = new Map();
+    if (!state.an.isDosFs) return;
+    for (const e of state.an.entries) {
+      if (e.kind !== 'file') continue;
+      const k = Preview.identify(ADF.readFile(state.an, state.session.bytes, e).data);
+      if (k && k.kind !== 'other') state.kinds.set(e.path, k);
+    }
   }
 
   const entry = () => state.entryPath === null ? null : (state.an.entries.find(e => e.path === state.entryPath) || null);
@@ -182,16 +196,20 @@
       const open = state.open.has(e.path);
       const color = e.kind === 'root' ? COLORS.root : isDir ? COLORS.dir : e.kind === 'file' ? COLORS.file : COLORS.link;
       const size = e.kind === 'file' ? fmtSize(e.size) : isDir ? e.children.length + (e.children.length === 1 ? ' item' : ' items') : e.kind;
+      const k = state.kinds.get(e.path);
+      const tag = k ? '<span class="tag t-' + k.kind + '" title="' + esc(k.label) + ': click to preview">' + TAGS[k.kind] + '</span>' : '';
       rows.push('<div class="row' + (state.entryPath === e.path ? ' sel' : '') + '" data-path="' + esc(e.path) + '" style="padding-left:' + (6 + depth * 14) + 'px">' +
         '<span class="tw">' + (isDir && e.children.length ? (open ? '▾' : '▸') : '') + '</span>' +
         '<span class="sq" style="background:' + color + '"></span>' +
-        '<span class="nm">' + esc(e.kind === 'root' ? e.name + ':' : e.name) + '</span><span class="sz">' + size + '</span></div>');
+        '<span class="nm">' + esc(e.kind === 'root' ? e.name + ':' : e.name) + '</span>' + tag + '<span class="sz">' + size + '</span></div>');
       if (isDir && open) e.children.forEach(c => add(c, depth + 1));
     };
     add(an.entries[0], 0);
     tree.innerHTML = rows.join('');
     renderFileInfo();
   }
+
+  const TAGS = { text: 'TXT', image: 'PIC', icon: 'ICON', sound: 'SFX', music: 'MOD', packed: 'PP' };
 
   function fmtSize(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB'; }
 
@@ -328,7 +346,336 @@
 
   function renderAll() {
     if (!state.an) return;
-    renderSummary(); drawMap(); renderLegend(); renderTree(); renderBoot(); renderBlock(); renderProblems();
+    renderSummary(); drawMap(); renderLegend(); renderTree(); renderBoot(); renderBlock(); renderProblems(); renderPreview();
+  }
+
+  /** Select a file or folder: light it up on the map, and preview it (switching to the Preview tab if it's a recognised file). */
+  function selectEntry(path) {
+    state.entryPath = path; state.guideNode = null; state.iconPal = null;
+    renderTree(); drawMap();
+    const e = entry();
+    if (e && e.kind === 'file' && previewOf(e).kind !== 'none') setTab('preview');
+    renderPreview();
+  }
+
+  // ---------- preview ----------
+
+  function previewOf(e) {
+    let pv = state.previews.get(e.path);
+    if (!pv) {
+      const r = ADF.readFile(state.an, state.session.bytes, e);
+      pv = Preview.decode(r.data, e.name);
+      if (!r.complete) pv.notes = (pv.notes || []).concat('Some of this file\'s blocks are missing or damaged, so the preview may be incomplete.');
+      state.previews.set(e.path, pv);
+    }
+    return pv;
+  }
+
+  const fmtBytes = n => n.toLocaleString('en-GB') + ' bytes';
+  const fmtTime = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+  const rgb = c => 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+  /** Width available for pictures in the right-hand pane. */
+  const paneWidth = () => Math.max(200, $('#detailPane').clientWidth - 30);
+
+  function renderPreview() {
+    stopAudio();
+    const box = $('#tab-preview'), e = state.an ? entry() : null;
+    if (!e || e.kind !== 'file') {
+      box.innerHTML = '<p class="muted">Click a file in the file list to preview it. Pictures, Workbench icons, sounds, music and text (including AmigaGuide) are recognised by what is inside them, and PowerPacker files are unpacked first. Recognised files have a coloured tag in the list.</p>';
+      return;
+    }
+    const pv = previewOf(e);
+    let h = '<div class="pv-head"><b>' + esc(e.name) + '</b> · ' + esc(pv.label) + '</div>';
+    if (pv.details) h += '<div class="muted">' + pv.details.map(esc).join(' · ') + '</div>';
+    if (pv.packed) {
+      const p = pv.packed;
+      h += '<div class="explain">Packed with ' + p.format + ': ' + fmtBytes(p.packedSize) +
+        (p.data ? ', unpacked to ' + fmtBytes(p.unpackedSize) + ' (' + Math.round(100 * p.packedSize / p.unpackedSize) + '%). What follows is the unpacked file. &nbsp;<button id="pvExtract">Extract unpacked…</button>' : '.') + '</div>';
+    }
+    if (pv.kind === 'image') h += imageHtml(pv);
+    else if (pv.kind === 'icon') h += iconHtml(pv);
+    else if (pv.kind === 'sound') h += soundHtml(pv);
+    else if (pv.kind === 'music') h += musicHtml(pv);
+    else if (pv.kind === 'text') h += textHtml(pv);
+    else h += '<p class="muted">' + esc(pv.note) + '</p>';
+    if (pv.notes && pv.notes.length) h += '<ul class="muted">' + pv.notes.map(n => '<li>' + esc(n) + '</li>').join('') + '</ul>';
+    box.innerHTML = h;
+    drawPreview();
+  }
+
+  /** Draw the canvases of the current preview (also called when the window is resized). */
+  function drawPreview() {
+    const e = state.an && entry();
+    if (!e || e.kind !== 'file') return;
+    const pv = previewOf(e);
+    if (pv.kind === 'image') drawImage(pv);
+    else if (pv.kind === 'icon') drawIcons(pv);
+    else if (pv.kind === 'sound') drawWave(pv);
+  }
+
+  // Pictures
+
+  function imageHtml(pv) {
+    const zooms = [['fit', 'Fit'], ['1', '1×'], ['2', '2×'], ['3', '3×']];
+    let h = '<div class="pv-tools">Zoom: ' + zooms.map(([z, t]) => '<button data-zoom="' + z + '"' + (state.zoom === z ? ' class="on"' : '') + '>' + t + '</button>').join('') +
+      '<span class="muted">Pixels are drawn in their Amiga shape' + (Math.abs(pv.aspect - 1) > 0.02 ? ' (' + (pv.aspect < 1 ? 'taller' : 'wider') + ' than square)' : '') + '.</span></div>' +
+      '<canvas id="pvImage" class="pixel"></canvas>';
+    if (pv.palette && pv.palette.length) {
+      h += '<div class="swatches" title="The colour palette">' + pv.palette.slice(0, 256).map((c, i) => '<i style="background:' + rgb(c) + '" title="Colour ' + i + ': ' + c.join(', ') + '"></i>').join('') + '</div>';
+    }
+    return h;
+  }
+
+  function drawImage(pv) {
+    const cv = $('#pvImage');
+    if (!cv) return;
+    cv.width = pv.width; cv.height = pv.height;
+    cv.getContext('2d').putImageData(new ImageData(pv.rgba, pv.width, pv.height), 0, 0);
+    let s = +state.zoom;
+    if (state.zoom === 'fit') { s = Math.min(4, paneWidth() / (pv.width * pv.aspect)); if (s >= 1) s = Math.floor(s); }
+    cv.style.width = Math.round(pv.width * pv.aspect * s) + 'px';
+    cv.style.height = Math.round(pv.height * s) + 'px';
+  }
+
+  // Icons
+
+  function iconHtml(pv) {
+    const pal = state.iconPal || pv.suggested;
+    let h = '<div class="pv-tools">Colours: <button data-iconpal="wb13"' + (pal === 'wb13' ? ' class="on"' : '') + '>Workbench 1.x</button>' +
+      '<button data-iconpal="wb20"' + (pal === 'wb20' ? ' class="on"' : '') + '>Workbench 2.0 and later</button>' +
+      '<span class="muted">An icon file holds colour numbers, not colours: the Workbench palette decides how it looks.</span></div>' +
+      '<div class="pv-icons"><figure><canvas class="pixel" data-icon="0"></canvas><figcaption>Normal</figcaption></figure>' +
+      '<figure><canvas class="pixel" data-icon="1"></canvas><figcaption>' + (pv.images.length > 1 ? 'Selected' : 'Selected (Workbench inverts the colours)') + '</figcaption></figure></div>';
+    const rows = [['Type', esc(pv.iconType)]];
+    if (pv.defaultTool) rows.push(['Default tool', '<span class="mono">' + esc(pv.defaultTool) + '</span>']);
+    if (pv.toolTypes.length) rows.push(['Tool types', pv.toolTypes.map(t => '<div class="mono">' + esc(t) + '</div>').join('')]);
+    if (pv.stack) rows.push(['Stack size', pv.stack.toLocaleString('en-GB') + ' bytes']);
+    return h + '<table class="kv" style="margin-top:12px">' + rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('') + '</table>';
+  }
+
+  function drawIcons(pv) {
+    const pal = pv.palettes[state.iconPal || pv.suggested];
+    document.querySelectorAll('#tab-preview canvas[data-icon]').forEach(cv => {
+      const which = +cv.dataset.icon, im = pv.images[Math.min(which, pv.images.length - 1)];
+      const invert = which === 1 && pv.images.length === 1 ? (1 << im.depth) - 1 : 0;
+      cv.width = im.width; cv.height = im.height;
+      const img = new ImageData(im.width, im.height);
+      for (let i = 0; i < im.pixels.length; i++) {
+        const c = pal[(im.pixels[i] ^ invert) % pal.length];
+        img.data.set([c[0], c[1], c[2], 255], i * 4);
+      }
+      cv.getContext('2d').putImageData(img, 0, 0);
+      const s = Math.max(1, Math.min(4, Math.floor(160 / im.height)));
+      cv.style.width = Math.round(im.width * pv.aspect * s) + 'px';
+      cv.style.height = im.height * s + 'px';
+    });
+  }
+
+  // Sounds
+
+  function soundHtml(pv) {
+    const rows = [];
+    if (pv.name) rows.push(['Name', esc(pv.name)]);
+    if (pv.author) rows.push(['Author', esc(pv.author)]);
+    if (pv.copyright) rows.push(['Copyright', esc(pv.copyright)]);
+    if (pv.annotation) rows.push(['Note', esc(pv.annotation)]);
+    return '<div class="pv-tools"><button id="pvPlay">▶ Play</button><span id="pvStatus" class="muted"></span></div>' +
+      '<div class="wavewrap"><canvas id="pvWave"></canvas><div class="playhead" id="pvHead"></div></div>' +
+      (rows.length ? '<table class="kv" style="margin-top:12px">' + rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('') + '</table>' : '');
+  }
+
+  function drawWave(pv) {
+    const cv = $('#pvWave');
+    if (!cv) return;
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const d = pv.samples, n = d.length, mid = h / 2;
+    if (pv.loopLength) {
+      g.fillStyle = 'rgba(242,193,78,.12)';
+      g.fillRect(pv.loopStart / n * w, 0, pv.loopLength / n * w, h);
+    }
+    g.fillStyle = '#2c313b'; g.fillRect(0, mid, w, 1);
+    g.fillStyle = '#9fd36b';
+    for (let x = 0; x < w; x++) {
+      const a = Math.floor(x / w * n), b = Math.max(a + 1, Math.floor((x + 1) / w * n));
+      let lo = 0, hi = 0;
+      for (let i = a; i < b && i < n; i++) { if (d[i] < lo) lo = d[i]; if (d[i] > hi) hi = d[i]; }
+      g.fillRect(x, mid - hi / 128 * mid, 1, Math.max(1, (hi - lo) / 128 * mid));
+    }
+  }
+
+  // Music
+
+  function musicHtml(pv) {
+    const len = ModPlayer.duration(pv);
+    const inst = pv.samples.map((s, i) => s.length || s.name ? '<tr><td class="mono">' + (i + 1).toString(16).toUpperCase().padStart(2, '0') + '</td><td>' + esc(s.name) + '</td><td>' +
+      (s.length ? fmtBytes(s.length) : '') + '</td><td>' + (s.length ? s.volume : '') + '</td><td>' + (s.loopLength > 2 ? 'loops' : '') + '</td><td>' +
+      (s.data.length ? '<button data-smp="' + i + '" title="Play this instrument at C-2">▶</button>' : '') + '</td></tr>' : '').join('');
+    return '<div class="pv-tools"><button id="pvPlay">▶ Play</button><span id="pvStatus" class="muted">' +
+      (pv.title ? '“' + esc(pv.title) + '” · ' : '') + (len >= 1800 ? 'plays forever' : 'about ' + fmtTime(len) + ' before it repeats') + '</span></div>' +
+      '<div class="pattern" id="pvPattern">' + patternHtml(pv, pv.order[0] || 0) + '</div>' +
+      '<h3>Instruments</h3><table class="fields"><tr><th>#</th><th>Name</th><th>Length</th><th>Volume</th><th>Loop</th><th></th></tr>' + inst + '</table>' +
+      '<p class="muted">Instrument names are often used for messages from the musician, as above.</p>';
+  }
+
+  function patternHtml(pv, pat) {
+    const hex2 = v => v.toString(16).toUpperCase().padStart(2, '0');
+    let h = '';
+    for (let r = 0; r < 64; r++) {
+      let line = '<span class="rn">' + hex2(r) + '</span>';
+      for (let c = 0; c < pv.channels; c++) {
+        const k = ModPlayer.cell(pv, pat, r, c);
+        const fx = k.effect || k.param ? k.effect.toString(16).toUpperCase() + hex2(k.param) : '...';
+        const empty = !k.period && !k.sample && fx === '...';
+        line += ' <span class="sep">|</span> ' + (empty ? '<span class="z">--- .. ...</span>' :
+          ModPlayer.noteName(k.period) + ' ' + (k.sample ? hex2(k.sample) : '..') + ' ' + fx);
+      }
+      h += '<div data-r="' + r + '"' + (r % 16 === 0 ? ' class="beat"' : '') + '>' + line + '</div>';
+    }
+    return h;
+  }
+
+  // Text
+
+  function textHtml(pv) {
+    const LIMIT = 300000;
+    if (!pv.guide) {
+      const t = pv.text.length > LIMIT ? pv.text.slice(0, LIMIT) : pv.text;
+      return '<pre class="pv-text">' + esc(t) + '</pre>' + (t.length < pv.text.length ? '<p class="muted">Only the first ' + LIMIT.toLocaleString('en-GB') + ' characters are shown.</p>' : '');
+    }
+    const nodes = pv.guide.nodes;
+    const find = name => nodes.find(n => n.name.toLowerCase() === String(name).toLowerCase());
+    const node = (state.guideNode && find(state.guideNode)) || find('main') || nodes[0];
+    const seg = s => {
+      let t = esc(s.t);
+      if (s.b) t = '<b>' + t + '</b>';
+      if (s.i) t = '<i>' + t + '</i>';
+      if (s.u) t = '<u>' + t + '</u>';
+      if (s.link !== undefined) return find(s.link) ? '<button class="link" data-gnode="' + esc(s.link) + '">' + t + '</button>' : '<span class="ext" title="Links to a page that is not in this file">' + t + '</span>';
+      if (s.external) return '<span class="ext" title="Links to another file">' + t + '</span>';
+      return t;
+    };
+    return '<div class="pv-tools">Page: <select id="pvNode">' + nodes.map(n => '<option value="' + esc(n.name) + '"' + (n === node ? ' selected' : '') + '>' + esc(n.title || n.name) + '</option>').join('') + '</select>' +
+      (node !== nodes[0] ? '<button data-gnode="' + esc(nodes[0].name) + '">Contents</button>' : '') + '</div>' +
+      '<pre class="pv-text">' + node.lines.map(l => l.map(seg).join('')).join('\n') + '</pre>';
+  }
+
+  // ---------- sound output ----------
+
+  const audio = { ctx: null, timer: 0, nodes: [], queue: [], anim: 0, lastPat: -1 };
+
+  function audioCtx() {
+    if (!audio.ctx) audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.ctx.state === 'suspended') audio.ctx.resume();
+    return audio.ctx;
+  }
+
+  function stopAudio() {
+    clearInterval(audio.timer); cancelAnimationFrame(audio.anim);
+    audio.timer = 0; audio.queue = []; audio.lastPat = -1;
+    for (const n of audio.nodes) { try { n.stop(); } catch (err) { /* already stopped */ } }
+    audio.nodes = [];
+    const b = $('#pvPlay');
+    if (b) b.textContent = '▶ Play';
+    const head = $('#pvHead');
+    if (head) head.style.display = 'none';
+    document.querySelectorAll('#pvPattern .now').forEach(x => x.classList.remove('now'));
+  }
+  const playing = () => audio.nodes.length > 0 || audio.timer !== 0;
+
+  /** Play 8-bit samples. Looping samples play for `seconds`; others play once. */
+  function playSamples(data, rate, opts) {
+    stopAudio();
+    if (!data.length) return;
+    const c = audioCtx();
+    // Web Audio buffers must be 3,000 Hz or more, so very slow sounds are stretched first.
+    const k = rate < 3000 ? Math.ceil(3000 / rate) : 1;
+    const buf = c.createBuffer(1, data.length * k, rate * k), ch = buf.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = data[Math.floor(i / k)] / 128;
+    const src = c.createBufferSource();
+    src.buffer = buf; src.connect(c.destination);
+    const o = opts || {};
+    if (o.loopLength > 2) { src.loop = true; src.loopStart = o.loopStart / rate; src.loopEnd = (o.loopStart + o.loopLength) / rate; }
+    const start = c.currentTime + 0.02;
+    src.start(start);
+    if (src.loop) src.stop(start + (o.seconds || 1.5));
+    src.onended = () => { if (audio.nodes.includes(src)) stopAudio(); };
+    audio.nodes.push(src);
+    const b = $('#pvPlay');
+    if (b && o.button) b.textContent = '■ Stop';
+    const head = $('#pvHead'), cv = $('#pvWave');
+    if (o.button && head && cv) {
+      head.style.display = 'block';
+      const total = src.loop ? (o.seconds || 1.5) : data.length / rate;
+      const step = () => {
+        const t = c.currentTime - start;
+        let pos = t * rate;
+        if (src.loop && pos > o.loopStart + o.loopLength) pos = o.loopStart + (pos - o.loopStart) % o.loopLength;
+        head.style.left = Math.max(0, Math.min(1, pos / data.length)) * cv.clientWidth + 'px';
+        if (t < total && audio.nodes.includes(src)) audio.anim = requestAnimationFrame(step);
+      };
+      step();
+    }
+  }
+
+  /** Stream a module: render short chunks ahead of time and queue them back to back. */
+  function playModule(pv) {
+    stopAudio();
+    const c = audioCtx(), player = ModPlayer.create(pv, c.sampleRate), CHUNK = 2048;
+    let t = c.currentTime + 0.05;
+    const pump = () => {
+      const ahead = document.hidden ? 3 : 0.4;   // timers slow down in background tabs
+      while (t < c.currentTime + ahead) {
+        audio.queue.push({ t, pos: player.position() });
+        const buf = c.createBuffer(2, CHUNK, c.sampleRate);
+        player.render(buf.getChannelData(0), buf.getChannelData(1), CHUNK);
+        const src = c.createBufferSource();
+        src.buffer = buf; src.connect(c.destination); src.start(t);
+        src.onended = () => { const i = audio.nodes.indexOf(src); if (i >= 0) audio.nodes.splice(i, 1); };
+        audio.nodes.push(src);
+        t += CHUNK / c.sampleRate;
+      }
+      while (audio.queue.length > 1 && audio.queue[1].t <= c.currentTime) audio.queue.shift();
+      if (audio.queue.length) showPosition(pv, audio.queue[0].pos);
+    };
+    pump();
+    audio.timer = setInterval(pump, 50);
+    const b = $('#pvPlay');
+    if (b) b.textContent = '■ Stop';
+  }
+
+  function showPosition(pv, pos) {
+    const box = $('#pvPattern');
+    if (!box) return;
+    if (pos.pattern !== audio.lastPat) { box.innerHTML = patternHtml(pv, pos.pattern); audio.lastPat = pos.pattern; }
+    const old = box.querySelector('.now'), row = box.querySelector('[data-r="' + pos.row + '"]');
+    if (old !== row) {
+      if (old) old.classList.remove('now');
+      if (row) { row.classList.add('now'); box.scrollTop = row.offsetTop - box.offsetTop - box.clientHeight / 2 + row.clientHeight / 2; }
+    }
+    $('#pvStatus').textContent = 'Position ' + (pos.order + 1) + ' of ' + pv.songLength + ' · pattern ' + pos.pattern + ' · row ' + pos.row +
+      (pos.loops ? ' · playing again' : '');
+  }
+
+  function onPreviewClick(t) {
+    const e = entry(), pv = e && previewOf(e);
+    if (!pv) return;
+    if (t.dataset.zoom) { state.zoom = t.dataset.zoom; renderPreview(); return; }
+    if (t.dataset.iconpal) { state.iconPal = t.dataset.iconpal; renderPreview(); return; }
+    if (t.dataset.gnode) { state.guideNode = t.dataset.gnode; renderPreview(); $('#detailPane').scrollTop = 0; return; }
+    if (t.id === 'pvExtract') { download(pv.packed.data, e.name + '.unpacked'); return; }
+    if (t.dataset.smp) {
+      const s = pv.samples[+t.dataset.smp];
+      playSamples(s.data, 3546895 / 428, { loopStart: s.loopStart, loopLength: s.loopLength });
+      return;
+    }
+    if (t.id === 'pvPlay') {
+      if (playing()) { stopAudio(); return; }
+      if (pv.kind === 'music') playModule(pv);
+      else if (pv.kind === 'sound') playSamples(pv.samples, pv.rate, { loopStart: pv.loopStart, loopLength: pv.loopLength, seconds: Math.max(2, pv.samples.length / pv.rate), button: true });
+    }
   }
 
   function goBlock(n, keepSel) {
@@ -403,12 +750,13 @@
       if ((en.kind === 'dir' || en.kind === 'root') && (state.entryPath === path || e.target.classList.contains('tw'))) {
         state.open.has(path) ? state.open.delete(path) : state.open.add(path);
       } else if (en.kind === 'dir') state.open.add(path);
-      state.entryPath = path;
-      renderTree(); drawMap();
+      selectEntry(path);
     });
 
     // Buttons inside rendered panels, handled in one place.
     document.addEventListener('click', e => {
+      const pt = e.target.closest('#tab-preview button');
+      if (pt) return onPreviewClick(pt);
       const t = e.target.closest('[data-goto],[data-fix],#extract');
       if (!t) return;
       if (t.dataset.goto !== undefined) return goBlock(+t.dataset.goto);
@@ -423,7 +771,12 @@
       afterEdit();
     });
 
-    document.querySelectorAll('.tabs button').forEach(b => { b.onclick = () => setTab(b.dataset.tab); });
+    document.querySelectorAll('.tabs button').forEach(b => { b.onclick = () => { setTab(b.dataset.tab); if (b.dataset.tab === 'preview') drawPreview(); }; });
+    $('#tab-preview').addEventListener('change', e => {
+      if (e.target.id === 'pvNode') { state.guideNode = e.target.value; renderPreview(); }
+    });
+    let resizeTimer = 0;
+    window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state.tab === 'preview') drawPreview(); }, 100); });
 
     const blockTab = $('#tab-block');
     blockTab.addEventListener('change', e => { if (e.target.id === 'goto') goBlock(parseInt(e.target.value, 10)); });
@@ -467,13 +820,16 @@
 
   wire();
 
-  // ?sample or ?open=<url>, plus &tab=block&block=880&file=docs/Story.txt&edit=1 — for demos and screenshots.
+  // ?sample or ?open=<url>, plus &tab=block&block=880&file=docs/Story.txt&edit=1 (and &node=… for an
+  // AmigaGuide page, &zoom=2 for pictures) — for demos and screenshots.
   // ?open only works where the browser allows the page to fetch that URL (for local files, Edge/Chrome
   // started with --allow-file-access-from-files).
   const q = new URLSearchParams(location.search);
   const applyParams = () => {
     if (q.get('edit')) { $('#editMode').checked = true; $('#editMode').onchange({ target: $('#editMode') }); }
-    if (q.get('file')) { state.entryPath = q.get('file'); const parts = q.get('file').split('/'); parts.forEach((_, i) => state.open.add(parts.slice(0, i).join('/'))); renderTree(); drawMap(); }
+    if (q.get('file')) { const parts = q.get('file').split('/'); parts.forEach((_, i) => state.open.add(parts.slice(0, i).join('/'))); selectEntry(q.get('file')); }
+    if (q.get('node')) { state.guideNode = q.get('node'); renderPreview(); }
+    if (q.get('zoom')) { state.zoom = q.get('zoom'); renderPreview(); }
     if (q.get('block')) goBlock(+q.get('block'));
     if (q.get('tab')) setTab(q.get('tab'));
   };

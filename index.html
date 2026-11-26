@@ -112,6 +112,35 @@
   #learn h3:first-child { margin-top: 0; }
   #learn code { font-family: var(--mono); color: var(--g-text); }
 
+  /* File type tags in the tree */
+  #tree .tag { font-size: 10px; letter-spacing: .04em; border-radius: 3px; padding: 0 4px; color: #11141a; font-weight: 600; flex: none; }
+  .t-text { background: #c9d1dd; } .t-image { background: #ff9fd1; } .t-icon { background: #6cb6ff; }
+  .t-sound { background: #9fd36b; } .t-music { background: #f2c14e; } .t-packed { background: #ff8a3d; }
+
+  /* Preview tab */
+  .pv-head { font-size: 16px; margin-bottom: 2px; }
+  .pv-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+  .pv-tools button.on { border-color: var(--accent); color: var(--accent); }
+  canvas.pixel { image-rendering: pixelated; display: block; background: #000; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 10px; max-width: 520px; }
+  .swatches i { width: 14px; height: 14px; border-radius: 2px; display: block; }
+  .pv-icons { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-end; }
+  .pv-icons figure { margin: 0; }
+  .pv-icons figcaption { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .wavewrap { position: relative; }
+  .wavewrap canvas { display: block; width: 100%; height: 140px; background: var(--panel2); border-radius: 6px; }
+  .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); display: none; }
+  .pv-text { font-family: var(--mono); font-size: 13px; white-space: pre-wrap; word-break: break-word; background: var(--panel2); padding: 10px 12px; border-radius: 6px; margin: 8px 0; }
+  .pv-text button.link { font-family: inherit; font-size: inherit; background: #26364a; border-radius: 3px; text-decoration: none; padding: 0 2px; }
+  .pv-text .ext { color: var(--muted); border-bottom: 1px dotted var(--muted); }
+  select { font: inherit; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+  .pattern { font-family: var(--mono); font-size: 12.5px; line-height: 1.45; background: var(--panel2); border-radius: 6px; padding: 6px 10px; height: 260px; overflow: auto; white-space: pre; }
+  .pattern .rn { color: var(--muted); }
+  .pattern .sep { color: #4a5160; }
+  .pattern .now { background: #4a2f1a; }
+  .pattern .beat .rn { color: var(--g-type); }
+  .pattern .z { color: #5a6170; }
+
   #drop { position: fixed; inset: 0; background: rgba(255,138,61,.15); border: 4px dashed var(--accent); display: none; align-items: center; justify-content: center; font-size: 28px; z-index: 10; pointer-events: none; }
   body.dragging #drop { display: flex; }
   #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--bad); color: #fff; padding: 8px 16px; border-radius: 8px; display: none; z-index: 11; max-width: 80vw; }
@@ -155,11 +184,13 @@
     <nav class="tabs">
       <button data-tab="boot" class="on">Boot block</button>
       <button data-tab="block">Block</button>
+      <button data-tab="preview">Preview</button>
       <button data-tab="problems">Problems <span id="probBadge"></span></button>
       <button data-tab="learn">How it works</button>
     </nav>
     <div id="tab-boot" class="tab on"><p class="muted">Open a disk to decode its boot block.</p></div>
     <div id="tab-block" class="tab"><p class="muted">Click a square on the disk map to look inside that block.</p></div>
+    <div id="tab-preview" class="tab"><p class="muted">Open a disk, then click a file to preview it.</p></div>
     <div id="tab-problems" class="tab"></div>
     <div id="tab-learn" class="tab">
       <div id="learn">
@@ -179,6 +210,8 @@
         <p>One bit for every block from block 2 onwards: 1 means free, 0 means in use. If the "bitmap valid" flag in the root block is not set, AmigaDOS rebuilds the bitmap by walking every file (the "validating" you see when you insert a disk that was not safely ejected).</p>
         <h3>Checksums</h3>
         <p>Header, extension, OFS data and bitmap blocks each carry a checksum. It is chosen so that all 128 longwords of the block add up to zero. The boot block uses a different sum that carries overflow back in. If you edit bytes in Edit mode, use <b>Fix checksum</b> afterwards, or the Amiga will see the block as damaged.</p>
+        <h3>Files on the disk</h3>
+        <p>AmigaDOS doesn't care what is in a file, but programs agreed on a few standard formats. <b>IFF</b> files start with <code>FORM</code>, a length and a type: <code>ILBM</code> is a picture stored as bitplanes (one layer per bit of the colour number), <code>8SVX</code> is a sound of 8-bit samples. <b>Icons</b> (<code>.info</code> files) hold Workbench's picture of a file plus settings such as its default tool. <b>ProTracker modules</b> hold short instrument samples and patterns of notes that the four sound channels play. Many files were packed to save space: <b>PowerPacker</b> files start with <code>PP20</code> and are unpacked from the end backwards. The Preview tab recognises all of these by their contents.</p>
         <h3>Non-DOS disks</h3>
         <p>Many games skip AmigaDOS completely. Their boot code loads raw tracks in the game's own format, often with copy protection, so there is no file system to show. The map then shows which blocks hold data and which are empty. The boot block and its disassembly are still the place to start.</p>
       </div>
@@ -191,6 +224,9 @@
 <script src="src/adf.js"></script>
 <script src="src/m68k.js"></script>
 <script src="src/edit.js"></script>
+<script src="src/preview.js"></script>
+<script src="src/modplayer.js"></script>
+<script src="src/build-files.js"></script>
 <script src="src/build-adf.js"></script>
 <script src="src/app.js"></script>
 </body>
