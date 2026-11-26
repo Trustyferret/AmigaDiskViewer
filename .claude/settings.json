@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(gh run list *)",
+      "PowerShell(gh run view *)",
+      "PowerShell(gh run watch *)",
+      "Bash(gh run watch *)",
+      "PowerShell(npm test)",
+      "Bash(npm test)",
+      "PowerShell(node --test \"tests/*.test.js\")",
+      "Bash(node --test \"tests/*.test.js\")"
+    ]
+  }
+}
