@@ -4,7 +4,7 @@
   "private": true,
   "description": "A browser page that shows what is on an Amiga floppy disk image (ADF/ADZ).",
   "scripts": {
-    "test": "node --test tests/",
+    "test": "node --test tests/*.test.js",
     "scan": "node tools/scan.js"
   }
 }

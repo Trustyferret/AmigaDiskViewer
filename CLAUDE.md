@@ -17,6 +17,6 @@ A single-page browser tool for exploring Amiga floppy images (ADF, ADZ): a disk 
 - Never write to the user's disk images. `tools/scan.js` is read-only, and the page only ever downloads a copy.
 
 ## Checking changes
-- `node --test tests/`: must pass with no warnings. The pre-commit hook in `.githooks/` runs it (enable per clone with `git config core.hooksPath .githooks`).
+- `node --test "tests/*.test.js"`: must pass with no warnings. The pre-commit hook in `.githooks/` runs it (enable per clone with `git config core.hooksPath .githooks`).
 - `node tools/scan.js "E:\Games\ROMs\Commodore Amiga"`: about 2,190 real images. Expect 0 crashes and no unreadable images. The last run read back 57,558 files; 100 were incomplete, all on broken or cracked disks.
 - Screenshots: headless Edge with `--screenshot` on `index.html?sample&...`. For real images, add `--allow-file-access-from-files` and use `?open=<url-encoded file:/// URL>`. To test edit mode, drive Edge through `--remote-debugging-port` (Node's built-in WebSocket is enough).

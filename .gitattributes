@@ -1,0 +1,2 @@
+# Store text files with Unix line endings (the hook script must keep them to run).
+* text=auto eol=lf

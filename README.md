@@ -36,6 +36,6 @@ Your original file is never changed. A web page cannot write to it anyway.
 ## For developers
 
 - No build step and no dependencies. The parsing code (`src/adf.js`, `src/m68k.js`, `src/edit.js`, `src/build-adf.js`) is plain JavaScript that runs both in the browser and in Node.
-- `npm test` (or `node --test tests/`) runs the tests. They build their own disks in memory, so no disk images are stored in the repository.
+- `npm test` (or `node --test "tests/*.test.js"`) runs the tests. They build their own disks in memory, so no disk images are stored in the repository.
 - `node tools/scan.js <folder>` reads every ADF/ADZ under a folder (read-only) and reports what the parser makes of them. It's a good check after changing the parser.
 - `index.html?sample` opens the sample disk directly. Add `&tab=block&block=880`, `&file=docs/Story.txt` or `&edit=1` to choose what it shows; this is handy for screenshots.
